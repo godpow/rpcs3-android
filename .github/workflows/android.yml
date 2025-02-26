@@ -137,6 +137,9 @@ jobs:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         CC: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
         CXX: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++
+        CLANG_CMD: clang
+        TIDY_FILE: ${{ github.workspace }}/build/clang-tidy-output.txt
+        TIDY_TIMEOUT: 300
       
     - name: Upload APK
       uses: actions/upload-artifact@v4
