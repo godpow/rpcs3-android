@@ -63,12 +63,64 @@ jobs:
     - name: Install Ninja build system
       run: sudo apt-get update && sudo apt-get install -y ninja-build
       
-    - name: Verify NDK installation
+    - name: Fix NDK symlinks and verify installation
       run: |
         echo "NDK path: ${{ steps.setup-ndk.outputs.ndk-path }}"
-        ls -la ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/
-        chmod +x ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/*
-            
+        # Create proper symlinks for clang and clang++
+        cd ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin
+        ls -la
+        
+        # Remove broken symlinks
+        find . -type l -exec test ! -e {} \; -delete
+        
+        # Create correct symlinks
+        if [ -f "clang-14" ]; then
+          ln -sf clang-14 clang
+        elif [ -f "clang-15" ]; then
+          ln -sf clang-15 clang
+        else
+          # Find the actual clang binary
+          CLANG_BIN=$(find . -name "clang-*" -type f -executable | head -1)
+          if [ -n "$CLANG_BIN" ]; then
+            ln -sf $(basename $CLANG_BIN) clang
+          fi
+        fi
+        
+        # Create clang++ symlink
+        ln -sf clang clang++
+        
+        # Create other necessary symlinks
+        if [ -f "lld" ]; then
+          ln -sf lld ld.lld
+          ln -sf lld ld64.lld
+          ln -sf lld lld-link
+          ln -sf lld wasm-ld
+        fi
+        
+        if [ -f "llvm-ar" ]; then
+          ln -sf llvm-ar llvm-ranlib
+          ln -sf llvm-ar llvm-lib
+          ln -sf llvm-ar llvm-dlltool
+        fi
+        
+        if [ -f "llvm-objcopy" ]; then
+          ln -sf llvm-objcopy llvm-strip
+        fi
+        
+        if [ -f "llvm-readobj" ]; then
+          ln -sf llvm-readobj llvm-readelf
+        fi
+        
+        if [ -f "llvm-symbolizer" ]; then
+          ln -sf llvm-symbolizer llvm-addr2line
+        fi
+        
+        if [ -f "llvm-rc" ]; then
+          ln -sf llvm-rc llvm-windres
+        fi
+        
+        # Verify symlinks
+        ls -la    
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
         
@@ -82,6 +134,8 @@ jobs:
       run: ./gradlew assembleDebug --build-cache --info
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        CC: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
+        CXX: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++
       
     - name: Upload APK
       uses: actions/upload-artifact@v4
