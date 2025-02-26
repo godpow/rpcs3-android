@@ -43,7 +43,7 @@ jobs:
       id: setup-ndk
       with:
         ndk-version: 'r27'
-        add-to-path: false
+        add-to-path: true
         link-to-sdk: true
         local-cache: true
         
@@ -62,7 +62,13 @@ jobs:
         
     - name: Install Ninja build system
       run: sudo apt-get update && sudo apt-get install -y ninja-build
-        
+      
+    - name: Verify NDK installation
+      run: |
+        echo "NDK path: ${{ steps.setup-ndk.outputs.ndk-path }}"
+        ls -la ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/
+        chmod +x ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/*
+            
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
         
@@ -73,7 +79,7 @@ jobs:
         cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
         
     - name: Build with Gradle
-      run: ./gradlew assembleDebug --build-cache
+      run: ./gradlew assembleDebug --build-cache --info
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
       
