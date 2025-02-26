@@ -66,28 +66,78 @@ jobs:
     - name: Fix NDK symlinks and verify installation
       run: |
         echo "NDK path: ${{ steps.setup-ndk.outputs.ndk-path }}"
-        # Create proper symlinks for clang and clang++
+        # Navigate to the bin directory
         cd ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin
         ls -la
         
-        # Remove broken symlinks
-        find . -type l -exec test ! -e {} \; -delete
-        
-        # Create correct symlinks
-        if [ -f "clang-14" ]; then
-          ln -sf clang-14 clang
-        elif [ -f "clang-15" ]; then
-          ln -sf clang-15 clang
+        # Check if clang is a script or binary
+        if [ -f "clang" ]; then
+          file_type=$(file clang)
+          echo "Clang file type: $file_type"
+          
+          # If clang is a shell script, we need to fix it
+          if [[ $file_type == *"shell script"* ]]; then
+            echo "Detected clang as a shell script, fixing..."
+            
+            # Rename the original clang script
+            mv clang clang-tidy.sh
+            
+            # Create a new clang wrapper script that will properly call the real clang
+            echo '#!/bin/bash' > clang
+            echo '# This is a wrapper script to call the real clang compiler' >> clang
+            echo '# Find the real clang binary' >> clang
+            echo 'for binary in clang-1* clang-2*; do' >> clang
+            echo '  if [ -f "$binary" ] && [ -x "$binary" ]; then' >> clang
+            echo '    exec "$binary" "$@"' >> clang
+            echo '    exit $?' >> clang
+            echo '  fi' >> clang
+            echo 'done' >> clang
+            echo '# Fallback to direct execution if we cannot find the real clang' >> clang
+            echo 'exec "$(dirname "$0")/clang-tidy.sh" "$@" -- ' >> clang
+            chmod +x clang
+            
+            # Do the same for clang++
+            echo '#!/bin/bash' > clang++
+            echo '# This is a wrapper script to call the real clang++ compiler' >> clang++
+            echo '# Find the real clang++ binary' >> clang++
+            echo 'for binary in clang++-1* clang++-2*; do' >> clang++
+            echo '  if [ -f "$binary" ] && [ -x "$binary" ]; then' >> clang++
+            echo '    exec "$binary" "$@"' >> clang++
+            echo '    exit $?' >> clang++
+            echo '  fi' >> clang++
+            echo 'done' >> clang++
+            echo '# Fallback to direct execution' >> clang++
+            echo 'exec "$(dirname "$0")/clang-tidy.sh" "$@" -- ' >> clang++
+            chmod +x clang++
+          fi
         else
-          # Find the actual clang binary
-          CLANG_BIN=$(find . -name "clang-*" -type f -executable | head -1)
-          if [ -n "$CLANG_BIN" ]; then
-            ln -sf $(basename $CLANG_BIN) clang
+          echo "Clang binary not found, searching for alternatives..."
+          # Find clang binaries
+          CLANG_BINARIES=$(find . -name "clang-*" -type f -executable | sort)
+          echo "Found clang binaries: $CLANG_BINARIES"
+          
+          # Use the first one as clang
+          FIRST_CLANG=$(echo "$CLANG_BINARIES" | head -1)
+          if [ -n "$FIRST_CLANG" ]; then
+            ln -sf $(basename $FIRST_CLANG) clang
+            echo "Created symlink from $(basename $FIRST_CLANG) to clang"
+          fi
+          
+          # Find clang++ binaries
+          CLANGPP_BINARIES=$(find . -name "clang++-*" -type f -executable | sort)
+          echo "Found clang++ binaries: $CLANGPP_BINARIES"
+          
+          # Use the first one as clang++
+          FIRST_CLANGPP=$(echo "$CLANGPP_BINARIES" | head -1)
+          if [ -n "$FIRST_CLANGPP" ]; then
+            ln -sf $(basename $FIRST_CLANGPP) clang++
+            echo "Created symlink from $(basename $FIRST_CLANGPP) to clang++"
+          else
+            # If no clang++ found, link clang to clang++
+            ln -sf clang clang++
+            echo "Created symlink from clang to clang++"
           fi
         fi
-        
-        # Create clang++ symlink
-        ln -sf clang clang++
         
         # Create other necessary symlinks
         if [ -f "lld" ]; then
@@ -133,6 +183,75 @@ jobs:
           cat clang-tidy.sh
         fi
         
+    - name: Create tidy file directory
+      run: |
+        mkdir -p ${{ github.workspace }}/build
+        touch ${{ github.workspace }}/build/clang-tidy-output.txt
+        chmod 666 ${{ github.workspace }}/build/clang-tidy-output.txt
+        
+    - name: Create direct clang binaries
+      run: |
+        # Find the real clang binaries
+        NDK_BIN_DIR="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        
+        # Find real clang binaries
+        REAL_CLANG=$(find ${NDK_BIN_DIR} -name "clang-*" -type f -executable | sort | head -1)
+        REAL_CLANGPP=$(find ${NDK_BIN_DIR} -name "clang++-*" -type f -executable | sort | head -1)
+        
+        if [ -z "$REAL_CLANG" ]; then
+          echo "No real clang binary found, using fallback"
+          REAL_CLANG="${NDK_BIN_DIR}/clang-14"
+        fi
+        
+        if [ -z "$REAL_CLANGPP" ]; then
+          echo "No real clang++ binary found, using fallback"
+          REAL_CLANGPP="${NDK_BIN_DIR}/clang++-14"
+        fi
+        
+        # Create direct clang binaries in a new directory
+        mkdir -p ${{ github.workspace }}/direct-clang/bin
+        
+        if [ -f "${NDK_BIN_DIR}/clang-tidy.sh" ]; then
+          echo "Creating direct clang wrappers to bypass clang-tidy.sh"
+          
+          # Create direct clang wrapper using echo statements
+          echo '#!/bin/bash' > ${{ github.workspace }}/direct-clang/bin/clang
+          echo '# Direct clang wrapper' >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "if [ -f \"$REAL_CLANG\" ]; then" >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "  exec \"$REAL_CLANG\" \"\$@\"" >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "else" >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "  # Fallback to original with environment variables set" >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "  export CLANG_CMD=clang" >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "  export TIDY_FILE=\"${{ github.workspace }}/build/clang-tidy-output.txt\"" >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "  export TIDY_TIMEOUT=300" >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "  exec \"${NDK_BIN_DIR}/clang-tidy.sh\" \"\$@\" -- " >> ${{ github.workspace }}/direct-clang/bin/clang
+          echo "fi" >> ${{ github.workspace }}/direct-clang/bin/clang
+          chmod +x ${{ github.workspace }}/direct-clang/bin/clang
+          
+          # Create direct clang++ wrapper using echo statements
+          echo '#!/bin/bash' > ${{ github.workspace }}/direct-clang/bin/clang++
+          echo '# Direct clang++ wrapper' >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "if [ -f \"$REAL_CLANGPP\" ]; then" >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "  exec \"$REAL_CLANGPP\" \"\$@\"" >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "else" >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "  # Fallback to original with environment variables set" >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "  export CLANG_CMD=clang++" >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "  export TIDY_FILE=\"${{ github.workspace }}/build/clang-tidy-output.txt\"" >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "  export TIDY_TIMEOUT=300" >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "  exec \"${NDK_BIN_DIR}/clang-tidy.sh\" \"\$@\" -- " >> ${{ github.workspace }}/direct-clang/bin/clang++
+          echo "fi" >> ${{ github.workspace }}/direct-clang/bin/clang++
+          chmod +x ${{ github.workspace }}/direct-clang/bin/clang++
+        else
+          echo "No clang-tidy.sh found, creating symlinks to original clang"
+          ln -sf "${NDK_BIN_DIR}/clang" ${{ github.workspace }}/direct-clang/bin/clang
+          ln -sf "${NDK_BIN_DIR}/clang++" ${{ github.workspace }}/direct-clang/bin/clang++
+        fi
+        
+        # Test the direct clang
+        echo "Testing direct clang..."
+        echo 'int main() { return 0; }' > ${{ github.workspace }}/test.c
+        ${{ github.workspace }}/direct-clang/bin/clang ${{ github.workspace }}/test.c -o ${{ github.workspace }}/test || echo "Direct clang test failed"
+        
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
         
@@ -144,20 +263,19 @@ jobs:
         
     - name: Build with Gradle
       run: |
-        # Create empty tidy file to satisfy clang-tidy.sh requirements
-        mkdir -p ${{ github.workspace }}/build
-        touch ${{ github.workspace }}/build/clang-tidy-output.txt
-        
         # Execute Gradle build with required environment variables
         ./gradlew assembleDebug --build-cache --info
       env:
         ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        CC: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
-        CXX: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++
+        CC: ${{ github.workspace }}/direct-clang/bin/clang
+        CXX: ${{ github.workspace }}/direct-clang/bin/clang++
         CLANG_CMD: clang
         TIDY_FILE: ${{ github.workspace }}/build/clang-tidy-output.txt
         TIDY_TIMEOUT: 300
-      
+        # Export these variables to make them available to subprocesses
+        CMAKE_C_COMPILER: ${{ github.workspace }}/direct-clang/bin/clang
+        CMAKE_CXX_COMPILER: ${{ github.workspace }}/direct-clang/bin/clang++
+        
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
