@@ -24,7 +24,6 @@ jobs:
         distribution: 'temurin'
         cache: gradle
         
-        
     - name: Setup Android SDK
       uses: android-actions/setup-android@v2
       
@@ -43,8 +42,10 @@ jobs:
       uses: nttld/setup-ndk@v1
       id: setup-ndk
       with:
-        ndk-version: '25.2.9519653'
+        ndk-version: 'r26e'
         add-to-path: false
+        link-to-sdk: true
+        local-cache: true
         
     - name: Cache NDK
       uses: actions/cache@v3
