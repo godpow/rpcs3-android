@@ -39,7 +39,7 @@ jobs:
           ${{ runner.os }}-android-sdk-
       
     - name: Install NDK and CMake
-      uses: nttld/setup-ndk@v1
+      uses: nttld/setup-ndk@v1.5.0
       id: setup-ndk
       with:
         ndk-version: 'r26e'
