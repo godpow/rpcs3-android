@@ -58,11 +58,11 @@ jobs:
     - name: Setup CMake
       uses: jwlawson/actions-setup-cmake@v1.14
       with:
-        cmake-version: '3.22.1'
+        cmake-version: '3.22.1'  # Using a more compatible CMake version
         
     - name: Install Ninja build system
       run: sudo apt-get update && sudo apt-get install -y ninja-build
-      
+        
     - name: Fix NDK symlinks and verify installation
       run: |
         echo "NDK path: ${{ steps.setup-ndk.outputs.ndk-path }}"
@@ -120,7 +120,8 @@ jobs:
         fi
         
         # Verify symlinks
-        ls -la    
+        ls -la
+        
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
         
