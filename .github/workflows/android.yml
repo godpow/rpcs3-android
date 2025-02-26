@@ -24,18 +24,56 @@ jobs:
         distribution: 'temurin'
         cache: gradle
         
-    - name: Set up Android SDK
+    - name: Validate Gradle wrapper
+      uses: gradle/wrapper-validation-action@ccb4328a959376b642e027874838f60f8e596de3
+        
+    - name: Setup Android SDK
       uses: android-actions/setup-android@v2
       
+    - name: Cache Android SDK
+      uses: actions/cache@v3.4.2
+      with:
+        path: |
+          ${{ env.ANDROID_HOME }}/platforms
+          ${{ env.ANDROID_HOME }}/build-tools
+          ${{ env.ANDROID_HOME }}/platform-tools
+        key: ${{ runner.os }}-android-sdk-${{ hashFiles('app/build.gradle.kts') }}
+        restore-keys: |
+          ${{ runner.os }}-android-sdk-
+      
+    - name: Install NDK and CMake
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: '25.2.9519653'
+        add-to-path: false
+        
+    - name: Cache NDK
+      uses: actions/cache@v3
+      with:
+        path: ${{ steps.setup-ndk.outputs.ndk-path }}
+        key: ${{ runner.os }}-ndk-${{ hashFiles('app/build.gradle.kts') }}-${{ hashFiles('app/src/main/cpp/CMakeLists.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-ndk-
+        
+    - name: Setup CMake
+      uses: jwlawson/actions-setup-cmake@v1.14
+      with:
+        cmake-version: '3.22.1'
+        
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
-      
-    - name: Install NDK
-      run: |
-        echo "y" | sudo ${ANDROID_HOME}/tools/bin/sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1"
+        
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@749f47bda3e44aa060e82d7b3ef7e40d953bd629
+      with:
+        gradle-version: wrapper
+        cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
         
     - name: Build with Gradle
-      run: ./gradlew assembleDebug
+      run: ./gradlew assembleDebug --build-cache
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
       
     - name: Upload APK
       uses: actions/upload-artifact@v4
