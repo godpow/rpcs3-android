@@ -60,6 +60,9 @@ jobs:
       with:
         cmake-version: '3.22.1'
         
+    - name: Install Ninja build system
+      run: sudo apt-get update && sudo apt-get install -y ninja-build
+        
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
         
